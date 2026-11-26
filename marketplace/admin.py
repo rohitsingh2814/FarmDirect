@@ -6,8 +6,8 @@ admin.site.register(CustomerProfile)
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "farmer", "category", "price", "quantity_kg", "is_available")
-    list_filter = ("category", "is_available")
+    list_display = ("name", "farmer", "category", "price", "discount_percent", "is_trending", "quantity_kg", "is_available")
+    list_filter = ("category", "is_available", "is_trending")
     search_fields = ("name", "farmer__farm_name")
 
 class OrderItemInline(admin.TabularInline):

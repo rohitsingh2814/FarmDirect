@@ -1,4 +1,6 @@
+from decimal import Decimal
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -36,13 +38,44 @@ class Product(models.Model):
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="vegetables")
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=9, decimal_places=2)
+    discount_percent = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(90)],
+        help_text="Discount percentage (0-90%)",
+    )
     quantity_kg = models.DecimalField(max_digits=9, decimal_places=2, help_text="Available quantity in kg")
     image = models.ImageField(upload_to="products/", blank=True, null=True)
+    is_trending = models.BooleanField(default=False, help_text="Feature in the trending deals carousel")
     is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def has_discount(self):
+        return self.discount_percent > 0
+
+    @property
+    def discounted_price(self):
+        if self.discount_percent <= 0:
+            return self.price
+        factor = (Decimal("100") - Decimal(self.discount_percent)) / Decimal("100")
+        return (self.price * factor).quantize(Decimal("0.01"))
+
+    @property
+    def savings_per_kg(self):
+        return (self.price - self.discounted_price).quantize(Decimal("0.01"))
+
+    @property
+    def category_emoji(self):
+        return {
+            "vegetables": "🥬",
+            "fruits": "🍓",
+            "grains": "🌾",
+            "dairy": "🥛",
+            "other": "🧺",
+        }.get(self.category, "🌱")
 
     def __str__(self):
         return self.name

@@ -1,4 +1,165 @@
-{% extends "base.html" %}{% block title %}Farmer dashboard | FarmDirect{% endblock %}
-{% block content %}<div class="d-flex flex-wrap justify-content-between align-items-center mb-4"><div><h1 class="h2">Farmer dashboard</h1><p class="text-muted mb-0">Welcome, {{ farmer.farm_name }} · {{ farmer.location }}</p></div><a class="btn btn-success mt-2 mt-md-0" href="{% url 'product_add' %}">+ Add product</a></div>
-<div class="row g-3 mb-4"><div class="col-md-4"><div class="stat-card"><div class="text-muted small">Listed products</div><div class="display-6 fw-semibold">{{ products.count }}</div></div></div><div class="col-md-4"><div class="stat-card"><div class="text-muted small">Farmer status</div><div class="h4 mt-2">{% if farmer.is_verified %}<span class="text-success">Verified</span>{% else %}<span class="text-warning">Pending verification</span>{% endif %}</div></div></div></div>
-<div class="card shadow-sm"><div class="card-body"><h2 class="h5">Your products</h2><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Product</th><th>Price/kg</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>{% for product in products %}<tr><td>{{ product.name }}</td><td>₹{{ product.price }}</td><td>{{ product.quantity_kg }} kg</td><td>{% if product.is_available %}<span class="badge text-bg-success">Available</span>{% else %}<span class="badge text-bg-secondary">Unavailable</span>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'product_edit' product.pk %}">Edit</a> <form class="d-inline" method="post" action="{% url 'product_delete' product.pk %}" onsubmit="return confirm('Delete this product?')">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% empty %}<tr><td colspan="5" class="text-muted">You have not listed any products yet.</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Farmer dashboard | FarmDirect{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 fd-fade-up">
+  <div>
+    <span class="fd-eyebrow mb-2">Seller Workspace</span>
+    <h1 class="h2 fw-bold mb-1">Farmer <span class="text-gradient-emerald">Studio</span></h1>
+    <p class="text-muted mb-0">Welcome, <strong>{{ farmer.farm_name }}</strong> · <i class="bi bi-geo-alt me-1"></i>{{ farmer.location }}</p>
+  </div>
+  <a class="btn fd-btn-primary" href="{% url 'product_add' %}">
+    <i class="bi bi-plus-lg me-1"></i>Add Product
+  </a>
+</div>
+
+<div class="row g-3 mb-4 fd-fade-up">
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card">
+      <div class="text-muted small fw-semibold text-uppercase">Listed Products</div>
+      <div class="display-6 fw-bold text-success mt-1">{{ products.count }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card">
+      <div class="text-muted small fw-semibold text-uppercase">Orders Received</div>
+      <div class="display-6 fw-bold text-success mt-1">{{ order_items.count }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card">
+      <div class="text-muted small fw-semibold text-uppercase">Total Sales</div>
+      <div class="display-6 fw-bold text-success mt-1 fd-price-num">₹{{ total_revenue|floatformat:2 }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card">
+      <div class="text-muted small fw-semibold text-uppercase">Farmer Status</div>
+      <div class="h5 fw-bold mt-2 mb-0">
+        {% if farmer.is_verified %}
+          <span class="text-success"><i class="bi bi-patch-check-fill me-1"></i>Verified</span>
+        {% else %}
+          <span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Pending verification</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Incoming Customer Orders -->
+<div class="fd-panel p-3 p-md-4 mb-4 fd-fade-up">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h5 fw-bold mb-0"><i class="bi bi-bag-check text-success me-2"></i>Incoming Customer Orders</h2>
+    <span class="badge rounded-pill text-bg-light border text-muted">{{ order_items.count }} order item{{ order_items.count|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="text-muted small text-uppercase">
+        <tr>
+          <th>Order</th>
+          <th>Product &amp; Qty</th>
+          <th>Earnings</th>
+          <th>Customer &amp; Delivery</th>
+          <th>Status</th>
+          <th class="text-end">Update Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order_items %}
+        <tr>
+          <td>
+            <div class="fw-bold">#{{ item.order.pk }}</div>
+            <div class="small text-muted">{{ item.order.created_at|date:"d M Y, h:i A" }}</div>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ item.product.category_emoji }} {{ item.product.name }}</div>
+            <div class="small text-muted">{{ item.quantity_kg }} kg × ₹{{ item.price_per_kg }}/kg</div>
+          </td>
+          <td class="fw-bold text-success fd-price-num">₹{{ item.subtotal|floatformat:2 }}</td>
+          <td>
+            <div class="fw-semibold small">{{ item.order.full_name }} · {{ item.order.phone }}</div>
+            <div class="small text-muted">{{ item.order.delivery_address }}</div>
+          </td>
+          <td>
+            <span class="badge rounded-pill {% if item.order.status == 'delivered' %}text-bg-success{% elif item.order.status == 'cancelled' %}text-bg-danger{% elif item.order.status == 'dispatched' %}text-bg-info{% elif item.order.status == 'confirmed' %}text-bg-primary{% else %}text-bg-warning{% endif %}">
+              {{ item.order.get_status_display }}
+            </span>
+          </td>
+          <td class="text-end">
+            <form method="post" action="{% url 'farmer_order_status' item.order.pk %}" class="d-inline-flex gap-2 align-items-center">
+              {% csrf_token %}
+              <select name="status" class="form-select form-select-sm" style="min-width: 130px;">
+                {% for code, label in status_choices %}
+                  <option value="{{ code }}" {% if item.order.status == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm fd-btn-outline" type="submit">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-muted py-4 text-center">No customer orders for your products yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Farmer's Listed Products -->
+<div class="fd-panel p-3 p-md-4 fd-reveal">
+  <h2 class="h5 fw-bold mb-3"><i class="bi bi-basket2 text-success me-2"></i>Your Products</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="text-muted small text-uppercase">
+        <tr>
+          <th>Product</th>
+          <th>Price / kg</th>
+          <th>Discount &amp; Deal</th>
+          <th>Stock</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+        <tr>
+          <td class="fw-semibold">{{ product.category_emoji }} {{ product.name }}</td>
+          <td class="fd-price-num">
+            <strong>₹{{ product.discounted_price }}</strong>
+            {% if product.has_discount %}<span class="fd-price-old ms-1">₹{{ product.price }}</span>{% endif %}
+          </td>
+          <td>
+            {% if product.has_discount %}
+              <span class="badge rounded-pill text-bg-warning">-{{ product.discount_percent }}% OFF</span>
+            {% else %}
+              <span class="text-muted small">No discount</span>
+            {% endif %}
+            {% if product.is_trending %}
+              <span class="badge rounded-pill text-bg-dark ms-1">🔥 Trending</span>
+            {% endif %}
+          </td>
+          <td>{{ product.quantity_kg }} kg</td>
+          <td>
+            {% if product.is_available %}
+              <span class="badge rounded-pill text-bg-success">Available</span>
+            {% else %}
+              <span class="badge rounded-pill text-bg-secondary">Unavailable</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm fd-btn-outline" href="{% url 'product_edit' product.pk %}">Edit</a>
+            <form class="d-inline" method="post" action="{% url 'product_delete' product.pk %}" onsubmit="return confirm('Delete this product?')">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-outline-danger rounded-pill">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted py-4 text-center">You have not listed any products yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

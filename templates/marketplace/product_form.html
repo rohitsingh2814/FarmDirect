@@ -1,2 +1,37 @@
-{% extends "base.html" %}{% load form_tags %}{% block title %}{{ heading }} | FarmDirect{% endblock %}
-{% block content %}<div class="row justify-content-center"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body p-4"><h1 class="h3 mb-3">{{ heading }}</h1><form method="post" enctype="multipart/form-data">{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field|add_class:'form-control' }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<button class="btn btn-success">Save product</button> <a class="btn btn-light" href="{% url 'farmer_dashboard' %}">Cancel</a></form></div></div></div></div>{% endblock %}
+{% extends "base.html" %}
+{% load form_tags %}
+{% block title %}{{ heading }} | FarmDirect{% endblock %}
+{% block content %}
+<div class="row justify-content-center fd-fade-up">
+  <div class="col-lg-7">
+    <div class="fd-panel p-4 p-md-5">
+      <span class="fd-eyebrow mb-2">Product Listing</span>
+      <h1 class="h3 fw-bold mb-4">{{ heading }}</h1>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% for field in form %}
+          {% if field|is_checkbox %}
+            <div class="form-check form-switch mb-3">
+              {{ field|add_class:'form-check-input' }}
+              <label class="form-check-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+              {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+          {% else %}
+            <div class="mb-3">
+              <label class="form-label fw-semibold small" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field|add_class:'form-control' }}
+              {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+              {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <div class="d-flex gap-2 mt-4">
+          <button class="btn fd-btn-primary px-4">Save Product</button>
+          <a class="btn fd-btn-outline px-4" href="{% url 'farmer_dashboard' %}">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

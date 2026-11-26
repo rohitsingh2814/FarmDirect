@@ -4,6 +4,28 @@ from django.contrib.auth.models import User
 from .models import FarmerProfile, CustomerProfile, Product
 
 
+class ResetPasswordDirectForm(forms.Form):
+    email = forms.EmailField(required=True, label="Registered Email")
+    new_password = forms.CharField(
+        widget=forms.PasswordInput,
+        label="New Password",
+        min_length=6,
+        help_text="Enter at least 6 characters.",
+    )
+    confirm_password = forms.CharField(
+        widget=forms.PasswordInput,
+        label="Confirm New Password",
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        new_password = cleaned_data.get("new_password")
+        confirm_password = cleaned_data.get("confirm_password")
+        if new_password and confirm_password and new_password != confirm_password:
+            self.add_error("confirm_password", "Passwords do not match.")
+        return cleaned_data
+
+
 class SignUpForm(UserCreationForm):
     email = forms.EmailField(required=True)
     role = forms.ChoiceField(choices=[("customer", "Customer"), ("farmer", "Farmer")])
@@ -47,10 +69,21 @@ class SignUpForm(UserCreationForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ["name", "category", "description", "price", "quantity_kg", "image", "is_available"]
+        fields = [
+            "name",
+            "category",
+            "description",
+            "price",
+            "discount_percent",
+            "quantity_kg",
+            "image",
+            "is_trending",
+            "is_available",
+        ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),
             "price": forms.NumberInput(attrs={"min": "0.01", "step": "0.01"}),
+            "discount_percent": forms.NumberInput(attrs={"min": "0", "max": "90", "step": "1"}),
             "quantity_kg": forms.NumberInput(attrs={"min": "0.01", "step": "0.01"}),
         }
 

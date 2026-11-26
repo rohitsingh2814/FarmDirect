@@ -8,20 +8,50 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import SignUpForm, ProductForm, CheckoutForm
+from django.contrib.auth.models import User
+from .forms import SignUpForm, ProductForm, CheckoutForm, ResetPasswordDirectForm
 from .models import FarmerProfile, Product, Order, OrderItem
 
 
 def home(request):
-    products = Product.objects.filter(is_available=True, quantity_kg__gt=0).select_related("farmer", "farmer__user")
+    available_products = Product.objects.filter(
+        is_available=True, quantity_kg__gt=0
+    ).select_related("farmer", "farmer__user")
+
+    trending_qs = available_products.filter(
+        Q(discount_percent__gt=0) | Q(is_trending=True)
+    ).order_by("-discount_percent", "-is_trending", "-created_at")
+    trending_products = list(trending_qs[:12])
+    if not trending_products:
+        trending_products = list(available_products[:6])
+    trending_slides = [trending_products[i : i + 3] for i in range(0, len(trending_products), 3)]
+
+    products = available_products
     query = request.GET.get("q", "").strip()
     category = request.GET.get("category", "")
     if query:
-        products = products.filter(Q(name__icontains=query) | Q(description__icontains=query) | Q(farmer__farm_name__icontains=query))
+        products = products.filter(
+            Q(name__icontains=query)
+            | Q(description__icontains=query)
+            | Q(farmer__farm_name__icontains=query)
+        )
     if category:
         products = products.filter(category=category)
     page_obj = Paginator(products, 9).get_page(request.GET.get("page"))
-    return render(request, "marketplace/home.html", {"page_obj": page_obj, "query": query, "category": category})
+
+    return render(
+        request,
+        "marketplace/home.html",
+        {
+            "page_obj": page_obj,
+            "query": query,
+            "category": category,
+            "trending_products": trending_products,
+            "trending_slides": trending_slides,
+            "categories": Product.CATEGORY_CHOICES,
+            "total_farms": FarmerProfile.objects.count(),
+        },
+    )
 
 
 def signup(request):
@@ -58,18 +88,77 @@ def user_logout(request):
     return redirect("home")
 
 
+def password_reset_direct(request):
+    if request.user.is_authenticated:
+        return redirect("home")
+    form = ResetPasswordDirectForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"].strip().lower()
+        new_password = form.cleaned_data["new_password"]
+        users = User.objects.filter(email__iexact=email)
+        if users.exists():
+            for user in users:
+                user.set_password(new_password)
+                user.save()
+            messages.success(request, "Your password has been reset successfully. Please login with your new password.")
+            return redirect("login")
+        else:
+            messages.error(request, "No account found with this email address.")
+    return render(request, "marketplace/password_reset.html", {"form": form})
+
+
 def product_detail(request, pk):
     product = get_object_or_404(Product.objects.select_related("farmer"), pk=pk, is_available=True)
     return render(request, "marketplace/product_detail.html", {"product": product})
 
 
+@login_required
 def farmer_dashboard(request):
     if not hasattr(request.user, "farmer_profile"):
         messages.error(request, "Only farmer accounts can access the farmer dashboard.")
         return redirect("home")
     farmer = request.user.farmer_profile
     products = farmer.products.all()
-    return render(request, "marketplace/farmer_dashboard.html", {"farmer": farmer, "products": products})
+    order_items = (
+        OrderItem.objects.filter(farmer=farmer)
+        .select_related("order", "product", "order__customer")
+        .order_by("-order__created_at", "-id")
+    )
+    total_revenue = sum(
+        (item.subtotal for item in order_items if item.order.status != "cancelled"),
+        Decimal("0.00"),
+    )
+    return render(
+        request,
+        "marketplace/farmer_dashboard.html",
+        {
+            "farmer": farmer,
+            "products": products,
+            "order_items": order_items,
+            "total_revenue": total_revenue,
+            "status_choices": Order.STATUS_CHOICES,
+        },
+    )
+
+
+@login_required
+@require_POST
+def farmer_order_status(request, pk):
+    if not hasattr(request.user, "farmer_profile"):
+        return redirect("home")
+    farmer = request.user.farmer_profile
+    order = get_object_or_404(
+        Order.objects.filter(items__farmer=farmer).distinct(), pk=pk
+    )
+    new_status = request.POST.get("status", "")
+    valid_statuses = {code for code, _ in Order.STATUS_CHOICES}
+    if new_status in valid_statuses:
+        order.status = new_status
+        order.save(update_fields=["status"])
+        messages.success(request, f"Order #{order.pk} marked as {order.get_status_display()}.")
+    else:
+        messages.error(request, "Invalid order status.")
+    return redirect("farmer_dashboard")
 
 
 @login_required
@@ -116,15 +205,43 @@ def _get_cart(request):
 
 def cart_view(request):
     cart = request.session.get("cart", {})
-    items, total = [], Decimal("0.00")
+    cleaned_cart = {}
+    items, total, total_savings = [], Decimal("0.00"), Decimal("0.00")
+    removed_unavailable = False
+
     for product_id, quantity in cart.items():
         product = Product.objects.filter(pk=product_id, is_available=True).first()
-        if product and Decimal(str(quantity)) > 0:
+        try:
             qty = Decimal(str(quantity))
-            subtotal = product.price * qty
-            items.append({"product": product, "quantity": qty, "subtotal": subtotal})
+        except InvalidOperation:
+            qty = Decimal("0")
+        if product and qty > 0:
+            cleaned_cart[product_id] = str(qty)
+            unit_price = product.discounted_price
+            subtotal = (unit_price * qty).quantize(Decimal("0.01"))
+            savings = (product.savings_per_kg * qty).quantize(Decimal("0.01"))
+            items.append({
+                "product": product,
+                "quantity": qty,
+                "unit_price": unit_price,
+                "subtotal": subtotal,
+                "savings": savings,
+            })
             total += subtotal
-    return render(request, "marketplace/cart.html", {"items": items, "total": total})
+            total_savings += savings
+        else:
+            removed_unavailable = True
+
+    if cleaned_cart != cart:
+        request.session["cart"] = cleaned_cart
+        if removed_unavailable:
+            messages.info(request, "Unavailable or deleted items were removed from your cart.")
+
+    return render(
+        request,
+        "marketplace/cart.html",
+        {"items": items, "total": total, "total_savings": total_savings},
+    )
 
 
 @require_POST
@@ -191,14 +308,21 @@ def checkout(request):
             # Validate every cart line before creating the order so an invalid cart
             # cannot leave behind an empty/partial order.
             locked_products = {}
-            for product_id, quantity in cart.items():
+            for product_id, quantity in list(cart.items()):
                 product = Product.objects.select_for_update().filter(
                     pk=product_id, is_available=True
                 ).first()
-                qty = Decimal(str(quantity))
-                if product is None or qty <= 0 or qty > product.quantity_kg:
-                    product_name = product.name if product else "A product in your cart"
-                    messages.error(request, f"Not enough stock for {product_name}. Please update your cart.")
+                try:
+                    qty = Decimal(str(quantity))
+                except InvalidOperation:
+                    qty = Decimal("0")
+                if product is None:
+                    cart.pop(product_id, None)
+                    request.session["cart"] = cart
+                    messages.warning(request, "An unavailable product was removed from your cart. Please review your cart.")
+                    return redirect("cart")
+                if qty <= 0 or qty > product.quantity_kg:
+                    messages.error(request, f"Not enough stock for {product.name} ({product.quantity_kg} kg left). Please update your cart.")
                     return redirect("cart")
                 locked_products[product_id] = (product, qty)
 
@@ -210,15 +334,16 @@ def checkout(request):
             )
             total = Decimal("0.00")
             for product, qty in locked_products.values():
+                unit_price = product.discounted_price
                 OrderItem.objects.create(
                     order=order, product=product, farmer=product.farmer,
-                    quantity_kg=qty, price_per_kg=product.price
+                    quantity_kg=qty, price_per_kg=unit_price
                 )
                 product.quantity_kg -= qty
                 if product.quantity_kg == 0:
                     product.is_available = False
                 product.save(update_fields=["quantity_kg", "is_available"])
-                total += product.price * qty
+                total += unit_price * qty
             order.total_amount = total
             order.save(update_fields=["total_amount"])
         request.session["cart"] = {}
