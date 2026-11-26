@@ -17,9 +17,20 @@ RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
-CSRF_TRUSTED_ORIGINS = ["https://*.onrender.com"]
+CSRF_TRUSTED_ORIGINS = ["https://*.onrender.com", "http://*.onrender.com"]
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
+    CSRF_TRUSTED_ORIGINS.append(f"http://{RENDER_EXTERNAL_HOSTNAME}")
+
+# Render terminates SSL at reverse proxy
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
