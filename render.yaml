@@ -3,7 +3,7 @@ services:
     name: farmdirect
     runtime: python
     buildCommand: "./build.sh"
-    startCommand: "gunicorn farmdirect.wsgi:application"
+    startCommand: "gunicorn farmdirect.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
